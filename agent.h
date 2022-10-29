@@ -154,8 +154,8 @@ public:
       save_weights();
   }
 
-  virtual action take_action(const board &before, unsigned) {
-	std::cout << "slider ";
+  virtual action take_action(const board &before) {
+	//std::cout << "slider ";
     board after[] = {board(before), board(before), board(before),
                      board(before)};
     board::reward reward[] = {after[0].slide(0), after[1].slide(1),
@@ -217,7 +217,7 @@ public:
 	}
 
 	virtual action take_action(const board& after) {
-		std::cout << "placer ";
+		//std::cout << "placer ";
 		std::vector<int> space = spaces[after.last()];
 		std::shuffle(space.begin(), space.end(), engine);
 		for (int pos : space) {
@@ -241,3 +241,53 @@ private:
 	std::vector<int> spaces[5];
 };
 
+class random_slider : public random_agent {
+public:
+	random_slider(const std::string& args = "") : random_agent("name=slide role=slider " + args),
+		opcode({ 0, 1, 2, 3 }) {}
+
+    virtual action take_action(const board& before) {
+        //std::shuffle(opcode.begin(), opcode.end(), engine);
+		//std::cout << "slider ";
+        int rewards[4] = {0};
+        for (int op : opcode) {
+            for (int i=0; i<1; i++){
+				board new_board = board(before);
+				board::reward reward = new_board.slide(op);
+				if (reward == -1){
+					rewards[op] = -1;
+					break;
+				}
+				rewards[op] += reward;
+				int max_pos[2] = {};
+				board::cell max_num = 0;
+				int count_empty = 0;
+				for (int j=0; j<4; j++){
+					for (int k=0; k<4; k++){
+						if (new_board[j][k] > max_num){
+							max_pos[0] = j;
+							max_pos[1] = k;
+							max_num = new_board[j][k];
+						}
+						if (new_board[j][k] == 0) count_empty++;
+					}
+				}
+
+				//postion of maximum number
+				if (max_pos[0] % 3 != 0 && max_pos[1] % 3 != 0) rewards[op] -= 30; //middle
+				else if (max_pos[0] % 3 == 0 && max_pos[1] % 3 == 0) rewards[op] += 9999; //corner
+				else if ((max_pos[0] % 3 == 0) ^ (max_pos[1] % 3 == 0)) rewards[op] += 9999; //side
+				
+				//the number of spaces
+				rewards[op] += (count_empty*500);
+            }
+		}
+        int max_ = *std::max_element(rewards, rewards+4);
+		int argmax = std::max_element(rewards, rewards+4) - rewards;
+        if (max_ != -1) return action::slide(argmax);
+        return action();
+    }
+private:
+	std::array<int, 4> opcode;
+	random_placer place;
+};

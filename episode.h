@@ -42,7 +42,10 @@ public:
 		return true;
 	}
 	agent& take_turns(agent& slide, agent& place) {
+		//std::cout << ep_state;
 		ep_time = millisec();
+		//std::cout << "step: " << step() << "\n";
+		int hi;
 		return step() >= 9 && (step() - 8) % 2 ? slide : place;
 	}
 	agent& last_turns(agent& slide, agent& place) {

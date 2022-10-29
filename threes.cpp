@@ -62,6 +62,7 @@ int main(int argc, const char* argv[]) {
 	}
 
 	tdl_agent slide(slide_args);
+	//random_slider slide(slide_args);
 	random_placer place(place_args);
 	while (!stats.is_finished()) {
 //		std::cerr << "======== Game " << stats.step() << " ========" << std::endl;
@@ -71,18 +72,23 @@ int main(int argc, const char* argv[]) {
 		stats.open_episode(slide.name() + ":" + place.name());
 		episode& game = stats.back();
 		while (true) {
+			//std::cout << "a\n";
 			agent& who = game.take_turns(slide, place);
+			//std::cout << "b\n";
 			action move = who.take_action(game.state());
+			//std::cout << "c\n";
 //			std::cerr << game.state() << "#" << game.step() << " " << who.name() << ": " << move << std::endl;
 			if (game.apply_action(move) != true) break;
+			//std::cout << "d\n";
 			if (who.check_for_win(game.state())) break;
+			//std::cout << "e\n";
 		}
 		agent& win = game.last_turns(slide, place);
 		stats.close_episode(win.name());
 
 		slide.close_episode(win.name());
 		place.close_episode(win.name());
-		std::cout << "\n";
+		//std::cout << "\n";
 	}
 
 	if (save_path.size()) {
