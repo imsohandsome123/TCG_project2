@@ -35,6 +35,24 @@ public:
 
 public:
 	board() : tile(), attr(0) { reset(); }
+	/*
+	board(uint64_t b=0u){
+		for (int r = 0; r < 4; r++) {
+			for (int c = 0; c < 4; c++) {
+				tile[r][c] = r*4 + c;
+			}
+		}
+	}
+	*/
+
+	board(cell rhs){
+		for(int i=0; i<4; i++){
+			for(int j=0; j<4; j++){
+				tile[i][j] = rhs++;
+			}
+		}
+	}
+
 	board(const grid& b, data v = 0) : tile(b), attr(v) {}
 	board(const board& b) = default;
 	board& operator =(const board& b) = default;

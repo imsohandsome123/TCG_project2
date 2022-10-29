@@ -61,9 +61,8 @@ int main(int argc, const char* argv[]) {
 		if (stats.is_finished()) stats.summary();
 	}
 
-	random_slider slide(slide_args);
+	tdl_agent slide(slide_args);
 	random_placer place(place_args);
-
 	while (!stats.is_finished()) {
 //		std::cerr << "======== Game " << stats.step() << " ========" << std::endl;
 		slide.open_episode("~:" + place.name());
@@ -83,6 +82,7 @@ int main(int argc, const char* argv[]) {
 
 		slide.close_episode(win.name());
 		place.close_episode(win.name());
+		std::cout << "\n";
 	}
 
 	if (save_path.size()) {

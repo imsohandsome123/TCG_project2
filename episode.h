@@ -166,7 +166,7 @@ protected:
 	};
 
 	static board initial_state() {
-		return {};
+		return board();
 	}
 	static time_t millisec() {
 		auto now = std::chrono::system_clock::now().time_since_epoch();

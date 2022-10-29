@@ -17,6 +17,7 @@
 #include <fstream>
 #include "board.h"
 #include "action.h"
+#include "pattern.h"
 #include "weight.h"
 
 class agent {
@@ -72,48 +73,133 @@ protected:
  */
 class weight_agent : public agent {
 public:
-	weight_agent(const std::string& args = "") : agent(args), alpha(0) {
-		if (meta.find("init") != meta.end())
-			init_weights(meta["init"]);
-		if (meta.find("load") != meta.end())
-			load_weights(meta["load"]);
-		if (meta.find("alpha") != meta.end())
-			alpha = float(meta["alpha"]);
-	}
-	virtual ~weight_agent() {
-		if (meta.find("save") != meta.end())
-			save_weights(meta["save"]);
-	}
+  weight_agent(const std::string &args = "") : agent(args), alpha(0.1f) {
+    if (meta.find("alpha") != meta.end())
+      alpha = float(meta["alpha"]);
+  }
+  virtual ~weight_agent() = default;
 
 protected:
-	virtual void init_weights(const std::string& info) {
-		std::string res = info; // comma-separated sizes, e.g., "65536,65536"
-		for (char& ch : res)
-			if (!std::isdigit(ch)) ch = ' ';
-		std::stringstream in(res);
-		for (size_t size; in >> size; net.emplace_back(size));
-	}
-	virtual void load_weights(const std::string& path) {
-		std::ifstream in(path, std::ios::in | std::ios::binary);
-		if (!in.is_open()) std::exit(-1);
-		uint32_t size;
-		in.read(reinterpret_cast<char*>(&size), sizeof(size));
-		net.resize(size);
-		for (weight& w : net) in >> w;
-		in.close();
-	}
-	virtual void save_weights(const std::string& path) {
-		std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
-		if (!out.is_open()) std::exit(-1);
-		uint32_t size = net.size();
-		out.write(reinterpret_cast<char*>(&size), sizeof(size));
-		for (weight& w : net) out << w;
-		out.close();
-	}
+  void load_weights() {
+    std::ifstream in(meta.at("load"), std::ios::in | std::ios::binary);
+    if (!in.is_open()) {
+      return;
+    }
+    uint32_t size;
+    in.read(reinterpret_cast<char *>(&size), sizeof(size));
+    net.resize(size);
+    for (auto &p : net) {
+      in >> p;
+    }
+    in.close();
+  }
+  void save_weights() const {
+    std::ofstream out(meta.at("save"),
+                      std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+      return;
+    }
+    uint32_t size = net.size();
+    out.write(reinterpret_cast<char *>(&size), sizeof(size));
+    for (auto &p : net) {
+      out << p;
+    }
+    out.close();
+  }
 
 protected:
-	std::vector<weight> net;
-	float alpha;
+  /**
+   * accumulate the total value of given state
+   */
+  float estimate(const board &b) const {
+    float value = 0;
+    for (auto &p : net) {
+      value += p.estimate(b);
+    }
+    return value;
+  }
+
+  /**
+   * update the value of given state and return its new value
+   */
+  float update(const board &b, float u) {
+    float u_split = u / net.size();
+    float value = 0;
+    for (auto &p : net) {
+      value += p.update(b, u_split);
+    }
+    return value;
+  }
+
+protected:
+  std::vector<pattern> net;
+  float alpha;
+};
+
+
+class tdl_agent : public weight_agent {
+public:
+  tdl_agent(const std::string &args = "")
+      : weight_agent("name=tdl role=player " + args) {
+    net.emplace_back(pattern({0, 1, 2, 3, 4, 5}));
+    net.emplace_back(pattern({4, 5, 6, 7, 8, 9}));
+    net.emplace_back(pattern({0, 1, 2, 4, 5, 6}));
+    net.emplace_back(pattern({4, 5, 6, 8, 9, 10}));
+    path_.reserve(20000);
+    if (meta.find("load") != meta.end())
+      load_weights();
+  }
+  ~tdl_agent() {
+    if (meta.find("save") != meta.end())
+      save_weights();
+  }
+
+  virtual action take_action(const board &before, unsigned) {
+	std::cout << "slider ";
+    board after[] = {board(before), board(before), board(before),
+                     board(before)};
+    board::reward reward[] = {after[0].slide(0), after[1].slide(1),
+                                after[2].slide(2), after[3].slide(3)};
+    constexpr const float ninf = -std::numeric_limits<float>::max();
+    float value[] = {
+        reward[0] == -1 ? ninf : reward[0] + estimate(after[0]),
+        reward[1] == -1 ? ninf : reward[1] + estimate(after[1]),
+        reward[2] == -1 ? ninf : reward[2] + estimate(after[2]),
+        reward[3] == -1 ? ninf : reward[3] + estimate(after[3]),
+    };
+    float *max_value = std::max_element(value, value + 4);
+    if (*max_value > ninf) {
+      unsigned idx = max_value - value;
+      path_.emplace_back(state({.before = before,
+                                .after = after[idx],
+                                .op = idx,
+                                .reward = static_cast<float>(reward[idx]),
+                                .value = *max_value}));
+      return action::slide(idx);
+    }
+    //;state temp_state();
+    path_.emplace_back(state());
+    return action();
+  }
+
+  void update_episode() {
+    float exact = 0;
+    for (path_.pop_back(); path_.size(); path_.pop_back()) {
+      state &move = path_.back();
+      float error = exact - (move.value - move.reward);
+      exact = move.reward + update(move.after, alpha * error);
+    }
+	
+    path_.clear();
+  }
+
+private:
+  struct state {
+    board before, after;
+    unsigned op;
+    float reward, value;
+  };
+  std::vector<state> path_;
 };
 
 /**
@@ -131,6 +217,7 @@ public:
 	}
 
 	virtual action take_action(const board& after) {
+		std::cout << "placer ";
 		std::vector<int> space = spaces[after.last()];
 		std::shuffle(space.begin(), space.end(), engine);
 		for (int pos : space) {
@@ -154,56 +241,3 @@ private:
 	std::vector<int> spaces[5];
 };
 
-/**
- * random player, i.e., slider
- * select a legal action randomly
- */
-class random_slider : public random_agent {
-public:
-	random_slider(const std::string& args = "") : random_agent("name=slide role=slider " + args),
-		opcode({ 0, 1, 2, 3 }) {}
-
-    virtual action take_action(const board& before) {
-        //std::shuffle(opcode.begin(), opcode.end(), engine);
-        int rewards[4] = {0};
-        for (int op : opcode) {
-            for (int i=0; i<1; i++){
-				board new_board = board(before);
-				board::reward reward = new_board.slide(op);
-				if (reward == -1){
-					rewards[op] = -1;
-					break;
-				}
-				rewards[op] += reward;
-				int max_pos[2] = {};
-				board::cell max_num = 0;
-				int count_empty = 0;
-				for (int j=0; j<4; j++){
-					for (int k=0; k<4; k++){
-						if (new_board[j][k] > max_num){
-							max_pos[0] = j;
-							max_pos[1] = k;
-							max_num = new_board[j][k];
-						}
-						if (new_board[j][k] == 0) count_empty++;
-					}
-				}
-
-				//postion of maximum number
-				if (max_pos[0] % 3 != 0 && max_pos[1] % 3 != 0) rewards[op] -= 30; //middle
-				else if (max_pos[0] % 3 == 0 && max_pos[1] % 3 == 0) rewards[op] += 9999; //corner
-				else if ((max_pos[0] % 3 == 0) ^ (max_pos[1] % 3 == 0)) rewards[op] += 9999; //side
-				
-				//the number of spaces
-				rewards[op] += (count_empty*500);
-            }
-		}
-        int max_ = *std::max_element(rewards, rewards+4);
-		int argmax = std::max_element(rewards, rewards+4) - rewards;
-        if (max_ != -1) return action::slide(argmax);
-        return action();
-    }
-private:
-	std::array<int, 4> opcode;
-	random_placer place;
-};
